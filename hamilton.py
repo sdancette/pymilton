@@ -166,10 +166,34 @@ class Hamilton(pv.UnstructuredGrid):
         """
         logging.info("Starting to compute strain field.")
 
+        nu = self.params.nu
+        E = self.params.E
+
         self.point_data['Eij'] =    np.zeros((self.n_points,9), dtype=DTYPEf)
         self.point_data['Eequiv'] = np.zeros(self.n_points, dtype=DTYPEf)
         self.point_data['Ehydro'] = np.zeros(self.n_points, dtype=DTYPEf)
-    
+
+        self['Eij'][:,0] = 1/E * (self['Sij'][:,0] - nu*(self['Sij'][:,4]+self['Sij'][:,8]))
+        self['Eij'][:,4] = 1/E * (self['Sij'][:,4] - nu*(self['Sij'][:,0]+self['Sij'][:,8]))
+        self['Eij'][:,8] = 1/E * (self['Sij'][:,8] - nu*(self['Sij'][:,0]+self['Sij'][:,4]))
+
+        self['Eij'][:,1] = (1+nu)/E * self['Sij'][:,1]
+        self['Eij'][:,2] = (1+nu)/E * self['Sij'][:,2]
+        self['Eij'][:,5] = (1+nu)/E * self['Sij'][:,5]
+        self['Eij'][:,3] = self['Eij'][:,1]
+        self['Eij'][:,6] = self['Eij'][:,2]
+        self['Eij'][:,7] = self['Eij'][:,5]
+
+        self['Ehydro'] = (self['Eij'][:,0] + self['Eij'][:,4] + self['Eij'][:,8])
+        self['Eequiv'] = np.sqrt((self['Eij'][:,0]- self['Eij'][:,4])**2 +
+                                 (self['Eij'][:,4]- self['Eij'][:,8])**2 + 
+                                 (self['Eij'][:,8]- self['Eij'][:,0])**2 +
+                                 6*(self['Eij'][:,1]**2 + self['Eij'][:,2]**2 + self['Eij'][:,5]**2)) * np.sqrt(2)/3 
+                                 
+        logging.info("Finished to compute strain field.")
+        
+        self.save(self.params.filename[:-4]+'.vtk')
+
     def compute_divergence_stress(self):
         """
         Compute divergence of stress tensor.
@@ -183,6 +207,25 @@ class Hamilton(pv.UnstructuredGrid):
         self.point_data['divSijAx1'] = np.zeros(self.n_points, dtype=DTYPEf)
         self.point_data['divSijAx2'] = np.zeros(self.n_points, dtype=DTYPEf)
         self.point_data['divSijAx3'] = np.zeros(self.n_points, dtype=DTYPEf)
+
+        self['Saxis1'] = self['Sij'][:,0:3]
+        self['Saxis2'] = self['Sij'][:,3:6]
+        self['Saxis3'] = self['Sij'][:,6:9]
+        
+        mesh_g = self.compute_derivative(scalars='Saxis1', gradient=False, divergence=True)
+        self['divSijAx1'] = mesh_g['divergence']
+        mesh_g = self.compute_derivative(scalars='Saxis2', gradient=False, divergence=True)
+        self['divSijAx2'] = mesh_g['divergence']
+        mesh_g = self.compute_derivative(scalars='Saxis3', gradient=False, divergence=True)
+        self['divSijAx3'] = mesh_g['divergence']
+
+        self.point_data.remove('Saxis1')
+        self.point_data.remove('Saxis2')
+        self.point_data.remove('Saxis3')
+
+        logging.info("Finished to compute divergence of stress.")
+
+        self.save(self.params.filename[:-4]+'.vtk')
 
     def compute_displacement(self):
         """
