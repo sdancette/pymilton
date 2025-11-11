@@ -160,7 +160,7 @@ class Hamilton(pv.UnstructuredGrid):
         
         self.save(self.params.filename[:-4]+'.vtk')
         
-    def compute_strain_explicit(self):
+    def compute_strain_from_stress(self):
         """
         Compute Hamilton's strain components based on explicit stress.
         """
@@ -233,10 +233,88 @@ class Hamilton(pv.UnstructuredGrid):
         """
         logging.info("Starting to compute displacement.")
 
+        nu = self.params.nu
+        E = self.params.E
+
         self.point_data['Psi'] =   np.zeros(self.n_points, dtype=DTYPEf)
         self.point_data['Omega'] = np.zeros(self.n_points, dtype=DTYPEf)
         self.point_data['U'] =     np.zeros((self.n_points, 3), dtype=DTYPEf)
         
+        #Ipsi,   err = quad_vec(psi_imag,   1e-9, a, args=(a, P, x, y, z))
+        #Iomega, err = quad_vec(omega_imag, 1e-9, a, args=(a, P, x, y, z))
+        Ipsi =   self._Psi_integral(nipt=201, start=1e-9)
+        Iomega = self._Omega_integral(nipt=201, start=1e-9)
+        self['Psi'] = (1+nu)/(2*np.pi*E) * Ipsi
+        self['Omega'] = -(1+nu)/(2*np.pi*E) * Iomega
+        
+        gradPsi =   self.compute_derivative(scalars='Psi', gradient=True, divergence=False)['gradient']
+        gradOmega = self.compute_derivative(scalars='Omega', gradient=True, divergence=False)['gradient']
+
+        z = self.points[:,2]
+        self['U'][:,0] = (1 - 2*nu) * gradOmega[:,0] - z*gradPsi[:,0]
+        self['U'][:,1] = (1 - 2*nu) * gradOmega[:,1] - z*gradPsi[:,1]
+        self['U'][:,2] = 2*(1 - nu) * self['Psi']    - z*gradPsi[:,2]
+
+        logging.info("Finished to compute displacement.")
+
+        self.save(self.params.filename[:-4]+'.vtk')
+
+    def _fpsi(self, xi):
+        a = self.params.a
+        P = self.params.P
+        x = self.points[:,0]
+        y = self.points[:,1]
+        z = self.points[:,2]
+        zprime = np.zeros(self.n_points, dtype=np.complex128)
+        zprime.real = z
+        zprime.imag = xi
+        Rprime = np.sqrt(x**2 + y**2 + zprime**2) 
+        psi = 3*P/a**3 * xi * np.log(Rprime + zprime)
+        return psi
+
+    def _psi_real(self, xi):
+        return np.real(self._fpsi(xi))
+
+    def _psi_imag(self, xi):
+        return np.imag(self._fpsi(xi))
+
+    def _fomega(self, xi):
+        a = self.params.a
+        P = self.params.P
+        x = self.points[:,0]
+        y = self.points[:,1]
+        z = self.points[:,2]
+        zprime = np.zeros(self.n_points, dtype=np.complex128)
+        zprime.real = z
+        zprime.imag = xi
+        Rprime = np.sqrt(x**2 + y**2 + zprime**2) 
+        omega = 3*P/a**3 * xi * (zprime * np.log(Rprime + zprime) - Rprime)
+        return omega
+
+    def _omega_real(self, xi):
+        return np.real(self._fomega(xi))
+
+    def _omega_imag(self, xi):
+        return np.imag(self._fomega(xi))
+
+    def _Psi_integral(self, nipt=101, start=1e-9):
+        a = self.params.a
+        xirange = np.linspace(start, a, nipt)
+        psi = np.zeros((self.n_points,nipt), dtype=DTYPEf)
+        for ixi, xi in enumerate(xirange):
+            psi[:,ixi] = self._psi_imag(xi)
+        Psi = np.trapezoid(psi, x=xirange, axis=1)
+        return Psi
+        
+    def _Omega_integral(self, nipt=101, start=1e-9):
+        a = self.params.a
+        xirange = np.linspace(start, a, nipt)
+        omega = np.zeros((self.n_points,nipt), dtype=DTYPEf)
+        for ixi, xi in enumerate(xirange):
+            omega[:,ixi] = self._omega_imag(xi)
+        Omega = np.trapezoid(omega, x=xirange, axis=1)
+        return Omega
+ 
 def read_from_vtk(filename):
     """
     Read a .vtk file and return an Hamilton object.
