@@ -1,4 +1,4 @@
-# pyOriMap
+# pymilton
 
 ## Description
 Numpy implementation of Hamilton's "Explicit Equations for the Stresses beneath a Sliding Spherical Contact", 1983 (https://doi.org/10.1243/PIME_PROC_1983_197_076_02).
@@ -13,6 +13,8 @@ MIT license.
 Requires numpy and pyvista.
 
 ```
+pip install -U numpy pyvista
+
 pip install pymilton # to be done
 ```
 
@@ -25,25 +27,28 @@ params = hami.HamiltonParameters()
 params.dimensions = (52,52,26)
 params.spacing = (0.1, 0.1, 0.1)
 params.origin = (-2.6, -2.6, 0.)
-params.E = 1.55
-params.nu = 0.49
-params.R = 9.42
-params.P = 1.48
-
-params.get_Hertzian_params()
 
 mesh = hami.Hamilton(params=params)
 ```
-
 Alternatively, starting from an existing mesh in Legacy VTK file format:
 ```
 mesh = hami.read_from_vtk("mesh.vtk")
-mesh.params.E = 1.55
-mesh.params.nu = 0.49
-mesh.params.R = 9.42
-mesh.params.P = 1.48
-
+```
+At this point the mesh is available as an Hamilton object, 
+from which stress, strain and displacement field will be computable.
+To do so, define a few contact parameters and the corresponding contact radius and maximum pressure:
+```
+mesh.params.E = 1.55  # Young's modulus
+mesh.params.nu = 0.49 # Poisson's coefficient
+mesh.params.R = 9.42  # indenter radius of curvature 
+mesh.params.P = 1.48  # Normal load
+mesh.params.get_Hertzian_params()
+```
+Then you can compute the stress, strain or displacement field: 
+```
 mesh.compute_stress_explicit()
+mesh.compute_strain_from_stress()
+mesh.compute_displacement()
 ```
 
 ## Support
