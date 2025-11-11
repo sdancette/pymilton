@@ -19,7 +19,7 @@ pip install pymilton # to be done
 ```
 
 ## Usage
-From scratch, starting by defining a mesh grid and a few contact parameters:
+From scratch, starting by defining a mesh grid:
 ```
 from pymilton import hamilton as hami
 
@@ -36,6 +36,7 @@ mesh = hami.read_from_vtk("mesh.vtk")
 ```
 At this point the mesh is available as an Hamilton object, 
 from which stress, strain and displacement field will be computable.
+
 To do so, define a few contact parameters and the corresponding contact radius and maximum pressure:
 ```
 mesh.params.E = 1.55  # Young's modulus
