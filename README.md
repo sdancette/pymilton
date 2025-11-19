@@ -15,7 +15,12 @@ Requires numpy and pyvista.
 ```
 pip install -U numpy pyvista
 
-pip install pymilton # to be done
+#pip install pymilton # to be done
+```
+Alternatively, put the repository in a folder that is accessible in your PYTHONPATH.
+For example, on Linux, put it in "/home/yourlogin/Code/Public/" and add this folder to your PYTHONPATH in your session's .bashrc file:
+```
+export PYTHONPATH="/home/yourlogin/Code/Public/:$PYTHONPATH"
 ```
 
 ## Usage
@@ -56,6 +61,7 @@ mesh.compute_displacement()
 Open issue or email to sylvain.dancette@insa-lyon.fr
 
 ## Roadmap
+Equations under non-zero tangential load not implemented yet, coming soon.
 
 ## Contributing
 Open to contributions, contact sylvain.dancette@insa-lyon.fr.
