@@ -95,6 +95,41 @@ class Hamilton(pv.UnstructuredGrid):
             self.params.spacing = (elsize, elsize, elsize)
             self.params.origin = (self.bounds[0], self.bounds[2], self.bounds[4])
 
+    def hemisphere_to_flat(self):
+        """
+        Flatten an hemispherical contact surface based on indenter radius R.
+        """
+        logging.info("Starting to flatten the surface with indenter radius {}.".format(self.params.R))
+
+        x = self.points[:,0]
+        y = self.points[:,1]
+        r = np.sqrt(x**2 + y**2)
+
+        R = self.params.R # radius of curvature of the hard indenter
+        theta = np.arcsin(r/R)
+        self._h = R - R*np.cos(theta)
+
+        self.points[:,2] -= self._h
+
+        whr = (self.points[:,2] < _EPS)
+        self.points[whr,2] = 0.
+
+        logging.info("Finished to flatten the surface.")
+
+        self.save(self.params.filename[:-4]+'-flat.vtk')
+
+    def flat_to_hemisphere(self):
+        """
+        Transfrom flat surface back to an hemispherical contact surface based on indenter radius R.
+        """
+        logging.info("Starting to unflatten the surface with indenter radius {}.".format(self.params.R))
+
+        self.points[:,2] += self._h
+
+        logging.info("Finished to unflatten the surface.")
+
+        self.save(self.params.filename[:-4]+'.vtk')
+
     def compute_stress_explicit(self):
         """
         Compute Hamilton's explicit stress components.
