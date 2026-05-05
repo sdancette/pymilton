@@ -95,11 +95,12 @@ class Hamilton(pv.UnstructuredGrid):
             self.params.spacing = (elsize, elsize, elsize)
             self.params.origin = (self.bounds[0], self.bounds[2], self.bounds[4])
 
-    def hemisphere_to_flat(self):
+    def surface_to_indenter(self):
         """
-        Flatten an hemispherical contact surface based on indenter radius R.
+        Compute the distance from an hemispherical indenter to flat
+        deformable surface based on the indenter radius R, or vice-versa.
         """
-        logging.info("Starting to flatten the surface with indenter radius {}.".format(self.params.R))
+        logging.info("Starting to compute distance to indenter based on radius {}.".format(self.params.R))
 
         x = self.points[:,0]
         y = self.points[:,1]
@@ -108,6 +109,20 @@ class Hamilton(pv.UnstructuredGrid):
         R = self.params.R # radius of curvature of the hard indenter
         theta = np.arcsin(r/R)
         self._h = R - R*np.cos(theta)
+
+        logging.info("Finished to compute distance to indenter.")
+
+    def hemisphere_to_flat(self):
+        """
+        Flatten an hemispherical contact surface based on indenter radius R.
+        """
+        logging.info("Starting to flatten the surface with indenter radius {}.".format(self.params.R))
+
+        try:
+            hmax = self._h.max()
+        except AttributeError:
+            # compute _h if not already available
+            self.surface_to_indenter()
 
         self.points[:,2] -= self._h
 
@@ -123,6 +138,12 @@ class Hamilton(pv.UnstructuredGrid):
         Transfrom flat surface back to an hemispherical contact surface based on indenter radius R.
         """
         logging.info("Starting to unflatten the surface with indenter radius {}.".format(self.params.R))
+
+        try:
+            hmax = self._h.max()
+        except AttributeError:
+            # compute _h if not already available
+            self.surface_to_indenter()
 
         self.points[:,2] += self._h
 
