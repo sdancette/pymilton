@@ -147,6 +147,21 @@ class Hamilton(pv.UnstructuredGrid):
 
         self.points[:,2] += self._h
 
+        try:
+            Uz = self.point_data['U'][:,2]
+            r = np.sqrt(self.points[:,0]**2 + self.points[:,1]**2)
+            rmin = r.min()
+            zmin = self.points[:,2].min()
+            whr = (r == rmin) * (self.points[:,2] == zmin)
+
+
+            Uz0 = self.point_data['U'][whr,2][0]
+            logging.info("... correcting node position with Uz0={} at (r={}, z={}).".format(Uz0, rmin, zmin))
+
+            self.point_data['U'][:,2] -= Uz0
+        except KeyError:
+            logging.info("... no displacement available to correct node position at (r=0, z=0).")
+
         logging.info("Finished to unflatten the surface.")
 
         self.save(self.params.filename[:-4]+'.vtk')
