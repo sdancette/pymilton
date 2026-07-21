@@ -300,9 +300,9 @@ class Hamilton(pv.UnstructuredGrid):
 
     def compute_displacement(self, nipt=201):
         """
-        Compute displacement by numerical integration of harmonic stress function Psi and Omega.
+        Compute displacement by numerical integration of harmonic stress function Psi, Omega, Upsilon and Sigma.
         """
-        logging.info("Starting to compute displacement.")
+        logging.info("Starting to compute displacement (Hamilton).")
 
         nu = self.params.nu
         E = self.params.E
@@ -352,7 +352,135 @@ class Hamilton(pv.UnstructuredGrid):
             self['U'][:,1] = -gradSigma['grad'][:,0] - 2*(1-nu)*gradUpsilon['grad'][:,1] - z*grad2Upsilon['grad2'][:,7]
             self['U'][:,2] = (1-2*nu)*gradUpsilon['grad'][:,2] - z*grad2Upsilon['grad2'][:,8]
 
-        logging.info("Finished to compute displacement.")
+        logging.info("Finished to compute displacement (Hamilton).")
+
+        self.save(self.params.filename[:-4]+'.vtk')
+
+    def compute_displacement_Hanson(self):
+        """
+        Compute displacement by numerical integration of harmonic stress function Psi, Omega, Upsilon and Sigma.
+        """
+        logging.info("Starting to compute displacement (Hanson).")
+
+        P = self.params.P
+        Q = self.params.Q
+        a = self.params.a
+        E = self.params.E
+        nu = self.params.nu
+        fx = Q/P
+        fy = 0
+        f = fx + 1j*fy
+
+        self.point_data['U'] = np.zeros((self.n_points, 3), dtype=DTYPEf)
+
+        x = self.points[:,0]
+        y = self.points[:,1]
+        z = self.points[:,2]
+        rho = np.sqrt(x**2 + y**2, dtype=DTYPEf)
+        whr = (rho > 0)
+
+        phi = np.zeros_like(rho)
+        phi[whr] = np.arccos(x[whr] / rho[whr])
+
+        l1 = 0.5 * (np.sqrt((rho+a)**2 + z**2) - np.sqrt((rho-a)**2 + z**2))
+        l2 = 0.5 * (np.sqrt((rho+a)**2 + z**2) + np.sqrt((rho-a)**2 + z**2))
+
+        l1_rho = np.zeros_like(rho)
+        l1_rho[whr] = np.minimum(l1[whr] / rho[whr], 1.)
+        l1_rho[~whr] = a / np.sqrt(a**2 + z[~whr]**2) # limit at rho=0
+
+        l2_a2 = np.maximum(l2**2 - a**2, 0.)
+
+        a2_l1 = np.maximum(a**2 - l1**2, 0.)
+
+        rho2_l1 = np.maximum(rho**2 - l1**2, 0.)
+
+        if Q == 0: # Normal loading
+            logging.info("... Normal loading case, Q={}...".format(Q))
+
+            # uc = ux + 1j*uy
+            uc0 = 3*P*(1+nu)/(4*np.pi*E*a**3) * rho * np.exp(1j * phi)
+
+            uc1 = 2*(1-nu)*z*np.arcsin(l1_rho)
+
+            uc2 = z*a/l2**2 * np.sqrt(l2_a2)
+
+            uc3 = np.zeros_like(rho)
+            uc3[whr] =  (1 - 2*nu)/(3*rho[whr]**2) * (2*a**3 + (3*rho[whr]**2 - 2*a**2 - l1[whr]**2)*np.sqrt(a2_l1[whr]))
+            uc3[~whr] = (1 - 2*nu)*a # limit at rho=0
+
+            uc_compr = uc0*(uc1 - uc2 - uc3)
+
+            # w = uz
+            w0 = 3*P*(1+nu)/(8*np.pi*E*a**3)
+
+            w1 = (2*(1-nu)*(2*a**2 - rho**2) - 4*nu*z**2)*np.arcsin(l1_rho)
+
+            w2 = 4*z*np.sqrt(a2_l1)
+
+            w3 = 2*(1-nu)/a * (3*l1**2 - 2*a**2) * np.sqrt(l2_a2) #l2**2 - a**2)
+
+            w_compr = w0*(w1 + w2 + w3)
+
+            ux = np.real(uc_compr)
+            uy = np.imag(uc_compr)
+            uy[self.points[:,1]<0] *= -1 # correct for antisym in uy
+
+            self['U'][:,0] = ux
+            self['U'][:,1] = uy
+            self['U'][:,2] = w_compr
+
+        else: # Shear loading
+            logging.info("... Shear loading case, Q={}...".format(Q))
+
+            # uc = ux + 1j*uy
+            uc0 = -3*P*(1+nu)/(4*np.pi*E*a**3)
+
+            uc1 = ( (2-nu)*(0.5*rho**2 - a**2) - (3-nu)*z**2  ) * np.arcsin(l1_rho)
+
+            uc2 = np.zeros_like(rho)
+            uc2[whr] = (2 - nu)*(2*a**2 - 3*l1[whr]**2)/(2*l1[whr]) * np.sqrt(rho2_l1[whr])
+            uc2[~whr] = (2 - nu)*a*z[~whr] # limit at rho=0
+
+            uc3 = z*np.sqrt(a2_l1)
+
+            uc4 = nu/4*rho**2*np.arcsin(l1_rho)
+
+            uc5 = np.zeros_like(rho)
+            uc5[whr] = 4*nu*a**3*z[whr] / (3*rho[whr]**2)
+            uc5[~whr] = 1e32 # ...limit at rho=0 is infinity...
+
+            uc6 = np.zeros_like(rho)
+            uc6[whr] = z[whr]*(2*a**3 - (l1[whr]**2 + 2*a**2)*np.sqrt(a2_l1[whr]) ) / (3*rho[whr]**2)
+            uc6[~whr] = 0 # limit at rho=0
+
+            uc7 = np.zeros_like(rho)
+            uc7[whr] = nu * (8*a**4 + a**2*rho[whr]**2 - (z[whr]**2 + 5/2*rho[whr]**2 + 5*a**2)*l1[whr]**2) * np.sqrt(rho2_l1[whr])/(6*rho[whr]**2 * l1[whr])
+            uc7[~whr] = 1e32 # ...limit at rho=0 is infinity...
+
+            uc_shear = uc0*( f*(uc1 + uc2 + uc3) - np.conjugate(f)*np.exp(1j*2*phi)*(uc4 - uc5 + uc6 + uc7) )
+
+            # w = uz
+            w0 = 3*P*(1+nu)/(4*np.pi*E*a**3) * (fx*np.cos(phi) + fy*np.sin(phi)) * rho
+
+            w1 = 2*nu*z*np.arcsin(l1_rho)
+
+            w2 = z*a/l2**2 * np.sqrt(l2_a2) #l2**2 - a**2)
+
+            w3 = np.zeros_like(rho)
+            w3[whr] =  (1 - 2*nu)/(3*rho[whr]**2) * (2*a**3 + (3*rho[whr]**2 - 2*a**2 - l1[whr]**2)*np.sqrt(a2_l1[whr]))
+            w3[~whr] = (1 - 2*nu)*a # limit at rho=0
+
+            w_shear = w0*(w1 - w2 + w3)
+
+            ux = np.real(uc_shear)
+            uy = np.imag(uc_shear)
+            uy[self.points[:,1]<0] *= -1 # correct for antisym in uy
+            self['U'][:,0] = ux
+            self['U'][:,1] = uy
+            self['U'][:,2] = w_shear
+
+        logging.info("Finished to compute displacement (Hanson).")
 
         self.save(self.params.filename[:-4]+'.vtk')
 
