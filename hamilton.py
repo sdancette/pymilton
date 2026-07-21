@@ -298,7 +298,7 @@ class Hamilton(pv.UnstructuredGrid):
 
         self.save(self.params.filename[:-4]+'.vtk')
 
-    def compute_displacement(self):
+    def compute_displacement(self, nipt=201):
         """
         Compute displacement by numerical integration of harmonic stress function Psi and Omega.
         """
@@ -306,25 +306,51 @@ class Hamilton(pv.UnstructuredGrid):
 
         nu = self.params.nu
         E = self.params.E
+        Q = self.params.Q
 
-        self.point_data['Psi'] =   np.zeros(self.n_points, dtype=DTYPEf)
-        self.point_data['Omega'] = np.zeros(self.n_points, dtype=DTYPEf)
         self.point_data['U'] =     np.zeros((self.n_points, 3), dtype=DTYPEf)
-        
-        #Ipsi,   err = quad_vec(psi_imag,   1e-9, a, args=(a, P, x, y, z))
-        #Iomega, err = quad_vec(omega_imag, 1e-9, a, args=(a, P, x, y, z))
-        Ipsi =   self._Psi_integral(nipt=201, start=1e-9)
-        Iomega = self._Omega_integral(nipt=201, start=1e-9)
-        self['Psi'] = (1+nu)/(2*np.pi*E) * Ipsi
-        self['Omega'] = -(1+nu)/(2*np.pi*E) * Iomega
-        
-        gradPsi =   self.compute_derivative(scalars='Psi', gradient=True, divergence=False)['gradient']
-        gradOmega = self.compute_derivative(scalars='Omega', gradient=True, divergence=False)['gradient']
 
-        z = self.points[:,2]
-        self['U'][:,0] = (1 - 2*nu) * gradOmega[:,0] - z*gradPsi[:,0]
-        self['U'][:,1] = (1 - 2*nu) * gradOmega[:,1] - z*gradPsi[:,1]
-        self['U'][:,2] = 2*(1 - nu) * self['Psi']    - z*gradPsi[:,2]
+        if Q == 0: # Normal loading
+            logging.info("... Normal loading case, Q={}...".format(Q))
+
+            self.point_data['Psi'] =   np.zeros(self.n_points, dtype=DTYPEf)
+            self.point_data['Omega'] = np.zeros(self.n_points, dtype=DTYPEf)
+
+            #Ipsi,   err = quad_vec(psi_imag,   1e-9, a, args=(a, P, x, y, z))
+            #Iomega, err = quad_vec(omega_imag, 1e-9, a, args=(a, P, x, y, z))
+            Ipsi =   self._Psi_integral(nipt=nipt, start=1e-9)
+            Iomega = self._Omega_integral(nipt=nipt, start=1e-9)
+            self['Psi'] =    (1+nu)/(2*np.pi*E) * Ipsi
+            self['Omega'] = -(1+nu)/(2*np.pi*E) * Iomega
+
+            gradPsi =   self.compute_derivative(scalars='Psi', gradient=True, divergence=False)['gradient']
+            gradOmega = self.compute_derivative(scalars='Omega', gradient=True, divergence=False)['gradient']
+
+            z = self.points[:,2]
+            self['U'][:,0] = (1 - 2*nu) * gradOmega[:,0] - z*gradPsi[:,0]
+            self['U'][:,1] = (1 - 2*nu) * gradOmega[:,1] - z*gradPsi[:,1]
+            self['U'][:,2] = 2*(1 - nu) * self['Psi']    - z*gradPsi[:,2]
+        else: # Shear loading
+            logging.info("... Shear loading case, Q={}...".format(Q))
+
+            self.point_data['Upsilon'] =   np.zeros(self.n_points, dtype=DTYPEf)
+            self.point_data['Sigma'] = np.zeros(self.n_points, dtype=DTYPEf)
+
+            x = self.points[:,0]
+            y = self.points[:,1]
+            z = self.points[:,2]
+
+            Iupsilon =   self._Upsilon_integral(nipt=nipt, start=1e-9)
+            self['Upsilon'] = -x*(1+nu)/(4*np.pi*E) * Iupsilon
+            self['Sigma'] =    y*(1+nu)/(2*np.pi*E) * Iupsilon
+
+            gradUpsilon =    self.compute_derivative(scalars='Upsilon', gradient='grad', divergence=False)
+            grad2Upsilon =   gradUpsilon.compute_derivative(scalars='grad', gradient='grad2', divergence=False)
+            gradSigma =      self.compute_derivative(scalars='Sigma',   gradient='grad', divergence=False)
+
+            self['U'][:,0] =  gradSigma['grad'][:,1] - 2*(1-nu)*gradUpsilon['grad'][:,0] - z*grad2Upsilon['grad2'][:,6]
+            self['U'][:,1] = -gradSigma['grad'][:,0] - 2*(1-nu)*gradUpsilon['grad'][:,1] - z*grad2Upsilon['grad2'][:,7]
+            self['U'][:,2] = (1-2*nu)*gradUpsilon['grad'][:,2] - z*grad2Upsilon['grad2'][:,8]
 
         logging.info("Finished to compute displacement.")
 
@@ -368,6 +394,25 @@ class Hamilton(pv.UnstructuredGrid):
     def _omega_imag(self, xi):
         return np.imag(self._fomega(xi))
 
+    def _fupsilon(self, xi):
+        a = self.params.a
+        Q = self.params.Q
+        x = self.points[:,0]
+        y = self.points[:,1]
+        z = self.points[:,2]
+        zprime = np.zeros(self.n_points, dtype=np.complex128)
+        zprime.real = z
+        zprime.imag = xi
+        Rprime = np.sqrt(x**2 + y**2 + zprime**2)
+        upsilon = 3*Q/a**3 * xi * (zprime/(Rprime + zprime) + np.log(Rprime + zprime) )
+        return upsilon
+
+    def _upsilon_real(self, xi):
+        return np.real(self._fupsilon(xi))
+
+    def _upsilon_imag(self, xi):
+        return np.imag(self._fupsilon(xi))
+
     def _Psi_integral(self, nipt=101, start=1e-9):
         a = self.params.a
         xirange = np.linspace(start, a, nipt)
@@ -386,6 +431,15 @@ class Hamilton(pv.UnstructuredGrid):
         Omega = np.trapezoid(omega, x=xirange, axis=1)
         return Omega
  
+    def _Upsilon_integral(self, nipt=101, start=1e-9):
+        a = self.params.a
+        xirange = np.linspace(start, a, nipt)
+        upsilon = np.zeros((self.n_points,nipt), dtype=DTYPEf)
+        for ixi, xi in enumerate(xirange):
+            upsilon[:,ixi] = self._upsilon_imag(xi)
+        Upsilon = np.trapezoid(upsilon, x=xirange, axis=1)
+        return Upsilon
+
 def read_from_vtk(filename):
     """
     Read a .vtk file and return an Hamilton object.
